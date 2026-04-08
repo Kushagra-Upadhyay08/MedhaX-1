@@ -1,0 +1,13 @@
+{
+  "name": "code-duel-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for CodeDuel",
+  "scripts": {
+    "start": "serve .",
+    "dev": "serve .",
+    "build": "echo 'No build step required for static templates'"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  }
+}

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: codeduel
+    env: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+    disk:
+      name: codeduel-data
+      mountPath: /app/backend/data
+      sizeGB: 1
