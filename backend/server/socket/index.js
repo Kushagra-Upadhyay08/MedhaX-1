@@ -99,7 +99,7 @@ function setupSocket(io) {
 
       matchManager.removeChallenge(challengeId);
 
-      // Create match
+      // Create match synchronously — instant, no waiting for questions
       const match = matchManager.createMatch(challenge);
 
       // Set socket IDs
@@ -121,7 +121,7 @@ function setupSocket(io) {
         totalCells: match.totalCells,
       };
 
-      // Notify both players
+      // Send match:created to both players immediately — no question loading delay!
       if (fromOnline) {
         io.to(fromOnline.socketId).emit('match:created', {
           ...matchData,
@@ -131,6 +131,12 @@ function setupSocket(io) {
       socket.emit('match:created', {
         ...matchData,
         opponentUsername: challenge.from.username,
+      });
+
+      // Fire question loading in the background while players place shapes
+      // By the time both finish placing (~30-60s), Gemini will be ready (<5s)
+      matchManager.loadQuestionsForMatch(match.id).catch(err => {
+        console.error('[Socket] Background question loading failed:', err.message);
       });
     });
 
@@ -162,14 +168,31 @@ function setupSocket(io) {
       }
 
       if (result.allPlaced) {
-        // Both placed - start quiz
-        setTimeout(() => {
+        // Both placed - wait for questions to be ready, then start quiz
+        const startQuiz = async () => {
+          const match = matchManager.getMatch(matchId);
+          if (!match) return;
+
+          // If questions aren't ready yet, wait for the background promise
+          if (!match.questionsReady && match.questionsPromise) {
+            console.log(`[Socket] Waiting for Gemini questions before starting quiz for match ${matchId}...`);
+            await match.questionsPromise;
+          }
+
+          if (!match.questions || match.questions.length === 0) {
+            console.error(`[Socket] No questions available for match ${matchId}!`);
+            io.to(`match:${matchId}`).emit('challenge:error', { error: 'Could not load questions. Please try a new match.' });
+            return;
+          }
+
           const questionData = matchManager.startNextQuestion(matchId);
           if (questionData && questionData.type === 'question') {
             io.to(`match:${matchId}`).emit('quiz:question', questionData);
             startQuestionTimer(io, matchId);
           }
-        }, 1500);
+        };
+
+        setTimeout(startQuiz, 1500);
       }
     });
 

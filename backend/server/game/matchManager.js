@@ -51,22 +51,12 @@ function createMatch(challenge) {
   const matchId = uuidv4();
   const gridSize = getGridSize(challenge.questionCount);
   const { shapes, totalCells } = generateShapes(challenge.questionCount);
-  const questions = pickQuestions(challenge.category, challenge.questionCount);
 
-  // Save match to DB
+  // Save match to DB immediately (synchronous, no questions yet)
   db.prepare(`
     INSERT INTO matches (id, player1_id, player2_id, category, question_count, status)
     VALUES (?, ?, ?, ?, ?, 'placing')
   `).run(matchId, challenge.from.id, challenge.to.id, challenge.category, challenge.questionCount);
-
-  // Save match questions
-  const insertQ = db.prepare('INSERT INTO match_questions (match_id, question_id, question_order) VALUES (?, ?, ?)');
-  const insertMany = db.transaction((qs) => {
-    for (const q of qs) {
-      insertQ.run(matchId, q.id, q.questionOrder);
-    }
-  });
-  insertMany(questions);
 
   const match = {
     id: matchId,
@@ -75,19 +65,11 @@ function createMatch(challenge) {
     gridSize,
     shapes,
     totalCells,
-    questions: questions.map(q => ({
-      id: q.id,
-      questionOrder: q.questionOrder,
-      questionText: q.question_text,
-      optionA: q.option_a,
-      optionB: q.option_b,
-      optionC: q.option_c,
-      optionD: q.option_d,
-      correctAnswer: q.correct_answer,
-      category: q.category,
-    })),
+    questions: [],          // filled later by loadQuestionsForMatch
+    questionsReady: false,  // flag: questions have been loaded
+    questionsPromise: null, // the in-flight Promise
     currentQuestionIndex: -1,
-    phase: 'placing', // placing | question | digging | results
+    phase: 'placing',
     players: {},
     questionTimer: null,
     digPhaseTimer: null,
@@ -111,8 +93,8 @@ function createMatch(challenge) {
       pendingDig: false,
       digsHit: 0,
       digsMiss: 0,
-      digsDone: new Set(), // cells already dug
-      revealedOnOpponent: [], // cells revealed on opponent's board
+      digsDone: new Set(),
+      revealedOnOpponent: [],
     };
   });
 
@@ -121,6 +103,53 @@ function createMatch(challenge) {
   userMatchMap.set(challenge.to.id, matchId);
 
   return match;
+}
+
+/**
+ * Load questions for a match in the background (during placement phase).
+ * Called right after createMatch — players are placing shapes while this runs.
+ */
+async function loadQuestionsForMatch(matchId) {
+  const match = activeMatches.get(matchId);
+  if (!match) return;
+
+  const promise = pickQuestions(match.category, match.questionCount)
+    .then(questions => {
+      if (!activeMatches.has(matchId)) return; // match may have been cleaned up
+
+      // Map to in-memory format
+      match.questions = questions.map(q => ({
+        id: q.id,
+        questionOrder: q.questionOrder,
+        questionText: q.question_text,
+        optionA: q.option_a,
+        optionB: q.option_b,
+        optionC: q.option_c,
+        optionD: q.option_d,
+        correctAnswer: q.correct_answer,
+        category: q.category,
+        isGemini: q.isGemini || false,
+      }));
+
+      // Only insert into match_questions for local DB questions (not Gemini)
+      if (questions.length > 0 && !questions[0].isGemini) {
+        const insertQ = db.prepare('INSERT INTO match_questions (match_id, question_id, question_order) VALUES (?, ?, ?)');
+        const insertMany = db.transaction((qs) => {
+          for (const q of qs) insertQ.run(matchId, q.id, q.questionOrder);
+        });
+        insertMany(questions);
+      }
+
+      match.questionsReady = true;
+      console.log(`[Match] Questions ready for match ${matchId} (${questions.length} questions, gemini=${questions[0]?.isGemini})`);
+    })
+    .catch(err => {
+      console.error(`[Match] Failed to load questions for match ${matchId}:`, err.message);
+      match.questionsReady = true; // unblock even if failed, startNextQuestion will return null
+    });
+
+  match.questionsPromise = promise;
+  return promise;
 }
 
 function getMatch(matchId) {
@@ -457,7 +486,7 @@ function cleanupMatch(matchId) {
 
 module.exports = {
   createChallenge, getChallenge, removeChallenge,
-  isUserInMatch, createMatch, getMatch, getMatchByUser, getOpponentId,
+  isUserInMatch, createMatch, loadQuestionsForMatch, getMatch, getMatchByUser, getOpponentId,
   submitPlacement, startNextQuestion, submitAnswer, evaluateQuestion, evaluateSingleAnswer,
   submitDig, skipDig, checkAllDigsDone, finishMatch, forfeitMatch, cleanupMatch,
   activeMatches, pendingChallenges,
