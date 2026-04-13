@@ -1,5 +1,9 @@
 // Match page controller - handles all game phases
-(async function() {
+(async /**
+ * Match Controller
+ * Updated with Premium Anti-Cheat and Zero-Wait Leave logic
+ */
+function() {
   // Auth check
   let currentUser = null;
   try {

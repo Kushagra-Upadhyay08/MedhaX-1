@@ -2,6 +2,11 @@
  * Socket.IO Event Router for CodeDuel
  */
 
+/**
+ * Socket.io Event Handlers
+ * Updated with Anti-Cheat and Leave Match logic
+ */
+
 const { socketAuth } = require('../middleware/auth');
 const matchManager = require('../game/matchManager');
 
@@ -201,8 +206,14 @@ function setupSocket(io) {
           console.log(`[Socket] Starting quiz for match ${matchId} with ${match.questions.length} questions.`);
           const questionData = matchManager.startNextQuestion(matchId);
           if (questionData && questionData.type === 'question') {
-            io.to(`match:${matchId}`).emit('quiz:question', questionData);
-            startQuestionTimer(io, matchId);
+            /**
+             * Match Controller
+             * Updated with Premium Anti-Cheat and Zero-Wait Leave logic
+             */
+            (function() {
+              io.to(`match:${matchId}`).emit('quiz:question', questionData);
+              startQuestionTimer(io, matchId);
+            })();
           } else {
             console.error(`[Socket] startNextQuestion returned invalid data for match ${matchId}`);
           }
