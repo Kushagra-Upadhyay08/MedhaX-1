@@ -157,6 +157,34 @@ function pickLocalQuestions(category, count) {
     questions.push(...extras);
   }
 
+  // EMERGENCY FALLBACK: If the DB is completely empty (e.g. fresh Render disk)
+  // and Gemini failed, we MUST return something so the game doesn't break.
+  if (questions.length === 0) {
+    console.warn('⚠️ [EMERGENCY FALLBACK] Local DB is empty! Generating failsafe questions...');
+    
+    // Auto-trigger the seed process in the background for next time
+    const { exec } = require('child_process');
+    const path = require('path');
+    exec(`node ${path.join(__dirname, '..', 'seed.js')}`, (err) => {
+      if (err) console.error('Auto-seed failed:', err);
+      else console.log('✅ Auto-seed completed successfully in the background.');
+    });
+
+    // Provide emergency questions immediately
+    for (let i = 0; i < count; i++) {
+      questions.push({
+        id: `emergency_${Date.now()}_${i}`,
+        question_text: `What is the core concept of ${category.toUpperCase()} (Failsafe Question ${i+1})?`,
+        option_a: 'Variables',
+        option_b: 'Functions',
+        option_c: 'Loops',
+        option_d: 'All of the above',
+        correct_answer: 'D',
+        category: category.toLowerCase(),
+      });
+    }
+  }
+
   return questions.map((q, i) => ({ ...q, questionOrder: i + 1, isGemini: false }));
 }
 
