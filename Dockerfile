@@ -4,20 +4,22 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY backend/package*.json ./
+# Copy root package files
+COPY package*.json ./
+# Copy backend package files
+COPY backend/package*.json ./backend/
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies for backend
+RUN cd backend && npm ci --only=production
 
-# Copy application code
-COPY backend/ ./
+# Copy all application code (preserves backend/ and frontend/ structure)
+COPY . .
 
-# Create data directory for SQLite
-RUN mkdir -p data
+# Create data directory for SQLite if needed (optional but good practice)
+RUN mkdir -p backend/data
 
-# Expose port
+# Expose port 3000 (standard for our app)
 EXPOSE 3000
 
-# Start the application
+# Start from the root using the npm start script
 CMD ["npm", "start"]
