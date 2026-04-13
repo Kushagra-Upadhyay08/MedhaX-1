@@ -27,13 +27,27 @@
 
   // Load categories
   let categories = [];
+  const defaultTopics = ['cpp', 'python', 'javascript', 'java', 'dsa', 'dbms'];
+  
   try {
     const res = await fetch('/api/categories');
-    const data = await res.json();
-    categories = data.categories;
+    if (res.ok) {
+      const data = await res.json();
+      categories = data.categories || [];
+    }
+  } catch (err) {
+    console.warn('Failed to fetch categories from server, using defaults.', err);
+  } finally {
+    // If no categories from server, use defaults
+    if (!categories || categories.length === 0) {
+      categories = defaultTopics;
+    }
+    
     const sel = document.getElementById('category-select');
-    sel.innerHTML = categories.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('');
-  } catch {}
+    if (sel) {
+      sel.innerHTML = categories.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('');
+    }
+  }
 
   // Load match history
   async function loadHistory() {

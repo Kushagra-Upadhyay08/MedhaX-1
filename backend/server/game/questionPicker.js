@@ -176,7 +176,19 @@ async function pickQuestions(category, count) {
  * Get available categories from local DB
  */
 function getCategories() {
-  return db.prepare('SELECT DISTINCT category FROM questions ORDER BY category').all().map(r => r.category);
+  const defaults = ['cpp', 'python', 'javascript', 'java', 'dsa', 'dbms'];
+  try {
+    const fromDb = db.prepare('SELECT DISTINCT category FROM questions WHERE category IS NOT NULL AND category != "" ORDER BY category')
+      .all()
+      .map(r => r.category);
+    
+    // Return combined unique list
+    const combined = [...new Set([...fromDb, ...defaults])];
+    return combined.sort();
+  } catch (err) {
+    console.error('[getCategories] Error:', err.message);
+    return defaults;
+  }
 }
 
 module.exports = { pickQuestions, getCategories };
