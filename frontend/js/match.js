@@ -24,6 +24,7 @@ function() {
   let opponentUsername = matchData.opponentUsername || 'Opponent';
 
   // State
+  let currentPhase = 'waiting';
   let selectedShapeIndex = -1;
   let currentRotation = 0;
   let placedShapes = {}; // shapeId -> { cells, rotationIndex }
@@ -34,6 +35,7 @@ function() {
   let currentQuestionIndex = -1;
   let answered = false;
   let lockedOut = false;
+  let matchFinished = false;
 
   // Init boards
   function initBoard(size) {
@@ -48,15 +50,26 @@ function() {
 
   // === PHASE TRANSITIONS ===
   function showPhase(phase) {
+    currentPhase = phase;
     ['phase-waiting', 'phase-placement', 'phase-quiz', 'phase-results'].forEach(id => {
-      document.getElementById(id).classList.add('hidden');
+      const el = document.getElementById(id);
+      if (el) {
+        if (id === `phase-${phase}`) {
+          el.classList.remove('hidden');
+        } else {
+          el.classList.add('hidden');
+        }
+      }
     });
-    document.getElementById(`phase-${phase}`).classList.remove('hidden');
-    document.getElementById('phase-label').textContent =
-      phase === 'waiting' ? 'Waiting...' :
-      phase === 'placement' ? 'Place Your Shapes' :
-      phase === 'quiz' ? 'Quiz Active' :
-      'Match Over';
+    
+    const labelEl = document.getElementById('phase-label');
+    if (labelEl) {
+      labelEl.textContent =
+        phase === 'waiting' ? 'Waiting...' :
+        phase === 'placement' ? 'Place Your Shapes' :
+        phase === 'quiz' ? 'Quiz Active' :
+        'Match Over';
+    }
   }
 
   // Start in placement phase
@@ -66,6 +79,11 @@ function() {
     renderOpponentBoard();
     renderMyBoardSmall();
     renderShapePalette();
+  } else {
+    // Fresh match or placing phase reconnect
+    showPhase('placement');
+    renderShapePalette();
+    renderPlacementBoard();
   }
 
   socket.on('challenge:error', (data) => {
@@ -565,6 +583,7 @@ function() {
 
   // === RESULTS ===
   socket.on('match:finished', (data) => {
+    matchFinished = true;
     showPhase('results');
 
     const titleEl = document.getElementById('result-title');
@@ -711,22 +730,15 @@ function() {
 
   // ====== MATCH LEAVE LOGIC ======
   function handleMatchLeave(isForfeit = false) {
-    const phaseLabel = document.getElementById('phase-label').textContent;
-    
-    if (phaseLabel === 'Match Over' || isForfeit) {
-      // Clean exit
+    // If we're just waiting or already finished, just leave.
+    if (currentPhase === 'waiting' || currentPhase === 'results' || isForfeit || matchFinished) {
       socket.emit('match:leave', { matchId });
-      // Redirection should be handled by 'match:go_dashboard' from server, 
-      // but we can also redirect immediately if we want "Zero-Wait"
       window.location.href = '/dashboard.html';
       return;
     }
 
     if (confirm("Are you sure you want to leave? This will count as a FORFEIT and you will lose the match.")) {
       socket.emit('match:forfeit', { matchId });
-      // The server will trigger match:finished, which updates the UI.
-      // We'll then redirect shortly after or let the user click "Back to Dashboard"
-      // Or we can just redirect immediately after emit.
       window.location.href = '/dashboard.html';
     }
   }

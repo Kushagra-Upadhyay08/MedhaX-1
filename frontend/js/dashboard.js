@@ -82,7 +82,9 @@
 
   socket.on('users:online_list', ({ users, count }) => {
     const el = document.getElementById('online-users');
-    const otherUsers = users.filter(u => u !== currentUser.username);
+    // Case-insensitive filtering of ourselves
+    const otherUsers = users.filter(u => u.toLowerCase() !== currentUser.username.toLowerCase());
+    
     if (!otherUsers.length) {
       el.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">No other users online. Open another browser window and log in as a different user to test!</p>';
       return;

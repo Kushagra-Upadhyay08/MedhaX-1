@@ -16,6 +16,7 @@ const onlineUsers = new Map();
 const socketUserMap = new Map();
 
 function broadcastOnlineUsers(io) {
+  console.log(`[Socket] Broadcasting online users: ${onlineUsers.size} users online`);
   io.emit('users:online_list', {
     users: [...onlineUsers.values()].map(u => u.username),
     count: onlineUsers.size,
@@ -67,12 +68,14 @@ function setupSocket(io) {
         return socket.emit('challenge:error', { error: 'You are already in a match' });
       }
 
-      const targetOnline = [...onlineUsers.values()].find(u => u.username === targetUsername.toLowerCase());
+      const targetUserLower = targetUsername.toLowerCase();
+      const targetOnline = [...onlineUsers.values()].find(u => u.username.toLowerCase() === targetUserLower);
+      
       if (!targetOnline) {
         return socket.emit('challenge:error', { error: 'User is not online' });
       }
 
-      const targetUserId = [...onlineUsers.entries()].find(([, u]) => u.username === targetUsername.toLowerCase())?.[0];
+      const targetUserId = [...onlineUsers.entries()].find(([, u]) => u.username.toLowerCase() === targetUserLower)?.[0];
       if (!targetUserId) {
         return socket.emit('challenge:error', { error: 'User not found' });
       }
@@ -141,11 +144,13 @@ function setupSocket(io) {
         io.to(fromOnline.socketId).emit('match:created', {
           ...matchData,
           opponentUsername: user.username,
+          phase: match.phase,
         });
       }
       socket.emit('match:created', {
         ...matchData,
         opponentUsername: challenge.from.username,
+        phase: match.phase,
       });
 
       // Fire question loading in the background while players place shapes
@@ -560,7 +565,7 @@ function setupSocket(io) {
     // Emit online users count
     socket.on('users:online', () => {
       socket.emit('users:online_list', {
-        users: [...onlineUsers.values()].map(u => u.username).filter(u => u !== user.username),
+        users: [...onlineUsers.values()].map(u => u.username), // Send full list, client filters as needed
         count: onlineUsers.size,
       });
     });
