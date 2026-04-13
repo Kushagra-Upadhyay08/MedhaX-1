@@ -15,7 +15,13 @@ const { setupSocket } = require('../socket');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' }, pingTimeout: 30000, pingInterval: 10000 });
+const io = new Server(server, { 
+  cors: { origin: '*' }, 
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingTimeout: 60000, 
+  pingInterval: 25000 
+});
 
 app.use(express.json());
 app.use(cookieParser());

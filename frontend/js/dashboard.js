@@ -21,7 +21,11 @@
   });
 
   // Socket connection
-  const socket = io();
+  const socket = io({
+    transports: ['websocket', 'polling'],
+    upgrade: true,
+    rememberUpgrade: true
+  });
   let pendingChallengeId = null;
   let challengeTargetUsername = null;
 

@@ -6,18 +6,36 @@
 function() {
   // Auth check
   let currentUser = null;
+  const statusEl = document.querySelector('#phase-waiting p');
+  
   try {
+    if (statusEl) statusEl.textContent = 'Verifying authentication...';
     const res = await fetch('/api/auth/me');
     if (!res.ok) { window.location.href = '/login.html'; return; }
     currentUser = (await res.json()).user;
-  } catch { window.location.href = '/login.html'; return; }
+  } catch (err) {
+    console.error('Auth check failed:', err);
+    window.location.href = '/login.html';
+    return;
+  }
 
   // Get match data from session storage
   const matchDataStr = sessionStorage.getItem('matchData');
-  if (!matchDataStr) { window.location.href = '/dashboard.html'; return; }
+  if (!matchDataStr) { 
+    console.warn('No match data found, redirecting to dashboard');
+    window.location.href = '/dashboard.html'; 
+    return; 
+  }
   const matchData = JSON.parse(matchDataStr);
 
-  const socket = io();
+  if (statusEl) statusEl.textContent = 'Connecting to game server...';
+  const socket = io({
+    transports: ['websocket', 'polling'],
+    upgrade: true,
+    rememberUpgrade: true,
+    reconnection: true,
+    reconnectionAttempts: 5
+  });
   let matchId = matchData.matchId;
   let gridSize = matchData.gridSize;
   let shapes = matchData.shapes || [];
