@@ -95,6 +95,7 @@ function createMatch(challenge) {
       digsMiss: 0,
       digsDone: new Set(),
       revealedOnOpponent: [],
+      warningCount: 0,
     };
   });
 
@@ -113,7 +114,7 @@ async function loadQuestionsForMatch(matchId) {
   const match = activeMatches.get(matchId);
   if (!match) return;
 
-  const promise = pickQuestions(match.category, match.questionCount)
+  match.questionsPromise = pickQuestions(match.category, match.questionCount)
     .then(questions => {
       if (!activeMatches.has(matchId)) return; // match may have been cleaned up
 
@@ -148,8 +149,7 @@ async function loadQuestionsForMatch(matchId) {
       match.questionsReady = true; // unblock even if failed, startNextQuestion will return null
     });
 
-  match.questionsPromise = promise;
-  return promise;
+  return match.questionsPromise;
 }
 
 function getMatch(matchId) {
@@ -430,6 +430,10 @@ function finishMatch(matchId, winCondition = 'points') {
     // Winner is whoever revealed all shapes — already determined by caller
     winnerId = match._revealWinnerId || null;
     isDraw = false;
+  } else if (winCondition === 'forfeit') {
+    // Winner is NOT the one who forfeited
+    winnerId = match._forfeitWinnerId || null;
+    isDraw = false;
   } else {
     // Judge by score (all questions answered)
     if (p1.score > p2.score) {
@@ -494,22 +498,25 @@ function finishMatch(matchId, winCondition = 'points') {
   return results;
 }
 
-function forfeitMatch(matchId, userId) {
+function forfeitMatch(matchId, userId, reason = 'manual') {
   const match = activeMatches.get(matchId);
   if (!match) return null;
 
   const opponentId = getOpponentId(match, userId);
   match.phase = 'results';
+  match._forfeitWinnerId = opponentId;
+  match._forfeitReason = reason;
 
+  const status = reason === 'cheat' ? 'forfeited_cheat' : 'forfeited';
   db.prepare(`
-    UPDATE matches SET status = 'forfeited', winner_id = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).run(opponentId, matchId);
+    UPDATE matches SET status = ?, winner_id = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(status, opponentId, matchId);
 
   // Cleanup timers
   if (match.questionTimer) clearTimeout(match.questionTimer);
   if (match.digPhaseTimer) clearTimeout(match.digPhaseTimer);
 
-  return { winnerId: opponentId, forfeited: true, forfeitedBy: userId };
+  return { winnerId: opponentId, forfeited: true, forfeitedBy: userId, reason };
 }
 
 function cleanupMatch(matchId) {

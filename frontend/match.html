@@ -22,9 +22,23 @@
         <div class="score-label" id="opp-name">—</div>
       </div>
     </div>
-    <div>
+    <div class="game-actions">
       <span class="game-phase-label" id="phase-label">Waiting...</span>
       <span class="badge badge-blue ml-1" id="question-progress"></span>
+      <button class="btn btn-ghost btn-sm ml-2" id="header-leave-btn">🏳️ Leave Match</button>
+    </div>
+  </div>
+
+  <!-- Anti-Cheat Overlay -->
+  <div id="cheat-warning-overlay" class="cheat-warning-overlay hidden">
+    <div class="cheat-warning-content">
+      <div class="cheat-warning-icon">⚠️</div>
+      <h2 id="cheat-warning-title">Unfair Play Detected!</h2>
+      <p id="cheat-warning-msg">Tab switching or copying text is not allowed. Please stay on this page to continue playing.</p>
+      <div class="cheat-warning-stats">
+        Warning <span id="cheat-warning-count">0</span>/3
+      </div>
+      <button class="btn btn-primary" id="close-cheat-overlay">I Understand</button>
     </div>
   </div>
 
@@ -48,13 +62,17 @@
           <div id="shape-palette" class="shape-palette"></div>
           <div class="placement-controls">
             <button class="btn btn-ghost btn-sm" id="rotate-btn">🔄 Rotate</button>
-            <button class="btn btn-ghost btn-sm" id="clear-btn">🗑️ Clear All</button>
+            <button id="clear-btn" class="secondary-btn">🗑️ Clear All</button>
+            <button class="btn btn-ghost btn-sm" id="auto-place-btn">🎲 Auto Place</button>
           </div>
           <div class="mt-2">
             <button class="btn btn-green w-full" id="confirm-placement-btn" disabled>✅ Confirm Placement</button>
           </div>
           <div id="placement-status" class="mt-1" style="font-size:0.85rem;color:var(--text-muted)"></div>
           <div id="opponent-placement-status" class="mt-1" style="font-size:0.85rem"></div>
+          <div class="mt-1">
+            <button id="side-leave-btn" class="btn btn-ghost btn-sm w-full">🏳️ Leave Match</button>
+          </div>
         </div>
         <div class="board-container">
           <div class="board-title">Your Board</div>

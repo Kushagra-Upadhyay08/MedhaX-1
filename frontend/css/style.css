@@ -782,3 +782,118 @@ a:hover { color: #33ddff; }
 .gap-1 { gap: 0.5rem; }
 .gap-2 { gap: 1rem; }
 .w-full { width: 100%; }
+
+/* ═══ Anti-Cheat Overlay ═══ */
+.cheat-warning-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 26, 0.75);
+  backdrop-filter: blur(12px) saturate(180%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  text-align: center;
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 2rem;
+}
+
+.cheat-warning-content {
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid rgba(255, 68, 102, 0.4);
+  border-radius: var(--radius-xl);
+  padding: 3.5rem 3rem;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 68, 102, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.cheat-warning-content::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+}
+
+.cheat-warning-icon {
+  font-size: 4.5rem;
+  margin-bottom: 0.5rem;
+  filter: drop-shadow(0 0 15px rgba(255, 68, 102, 0.5));
+}
+
+.cheat-warning-content h2 {
+  color: #fff;
+  font-size: 2rem;
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
+.cheat-warning-content p {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.cheat-warning-stats {
+  background: rgba(255, 68, 102, 0.15);
+  border: 1px solid rgba(255, 68, 102, 0.2);
+  border-radius: var(--radius-md);
+  padding: 1rem 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--accent-red);
+  font-weight: 700;
+  font-size: 1.25rem;
+  font-family: var(--font-mono);
+  margin: 0.5rem auto;
+}
+
+/* ═══ Match leaving actions ═══ */
+#header-leave-btn {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 68, 102, 0.05);
+  color: var(--text-secondary);
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+#header-leave-btn:hover {
+  background: var(--accent-red);
+  color: white;
+  border-color: var(--accent-red);
+  box-shadow: 0 0 20px rgba(255, 68, 102, 0.4);
+  transform: translateY(-1px);
+}
+
+#side-leave-btn {
+  width: 100%;
+  margin-top: 1rem;
+  background: rgba(255, 68, 102, 0.1);
+  border: 1px solid rgba(255, 68, 102, 0.2);
+  color: var(--accent-red);
+  font-weight: 600;
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+#side-leave-btn:hover {
+  background: rgba(255, 68, 102, 0.2);
+  border-color: var(--accent-red);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}

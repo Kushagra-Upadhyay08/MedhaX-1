@@ -168,31 +168,48 @@ function setupSocket(io) {
       }
 
       if (result.allPlaced) {
+        console.log(`[Socket] Both players placed shapes for match ${matchId}. Preparing to start quiz...`);
         // Both placed - wait for questions to be ready, then start quiz
         const startQuiz = async () => {
           const match = matchManager.getMatch(matchId);
-          if (!match) return;
-
-          // If questions aren't ready yet, wait for the background promise
-          if (!match.questionsReady && match.questionsPromise) {
-            console.log(`[Socket] Waiting for Gemini questions before starting quiz for match ${matchId}...`);
-            await match.questionsPromise;
-          }
-
-          if (!match.questions || match.questions.length === 0) {
-            console.error(`[Socket] No questions available for match ${matchId}!`);
-            io.to(`match:${matchId}`).emit('challenge:error', { error: 'Could not load questions. Please try a new match.' });
+          if (!match) {
+            console.error(`[Socket] Match ${matchId} not found during startQuiz!`);
             return;
           }
 
+          match.phase = 'starting_quiz';
+
+          // If questions aren't ready yet, wait for the background promise
+          if (!match.questionsReady && match.questionsPromise) {
+            console.log(`[Socket] Waiting for Gemini/DB questions for match ${matchId}...`);
+            try {
+              await match.questionsPromise;
+              console.log(`[Socket] Questions loaded successfully for match ${matchId}.`);
+            } catch (err) {
+              console.error(`[Socket] Error waiting for questionsPromise for match ${matchId}:`, err.message);
+            }
+          }
+
+          if (!match.questions || match.questions.length === 0) {
+            console.error(`[Socket] No questions found for match ${matchId} after waiting!`);
+            io.to(`match:${matchId}`).emit('challenge:error', { 
+              error: 'Failed to generate questions. Gemini API might be busy or invalid. Please try a different category or try again later.' 
+            });
+            return;
+          }
+
+          console.log(`[Socket] Starting quiz for match ${matchId} with ${match.questions.length} questions.`);
           const questionData = matchManager.startNextQuestion(matchId);
           if (questionData && questionData.type === 'question') {
             io.to(`match:${matchId}`).emit('quiz:question', questionData);
             startQuestionTimer(io, matchId);
+          } else {
+            console.error(`[Socket] startNextQuestion returned invalid data for match ${matchId}`);
           }
         };
 
-        setTimeout(startQuiz, 1500);
+        // Small delay to ensure client transitions smoothly
+        setTimeout(startQuiz, 1000);
       }
     });
 
@@ -406,35 +423,53 @@ function setupSocket(io) {
 
     socket.on('match:leave', ({ matchId }) => {
       const match = matchManager.getMatch(matchId);
-      if (!match) {
-        // Match already cleaned up, just redirect
-        socket.emit('match:go_dashboard');
+      
+      // Send the requesting player home immediately
+      socket.emit('match:go_dashboard');
+
+      if (!match) return;
+
+      // If they leave MID-MATCH, it's a forfeit
+      if (match.phase !== 'results') {
+        handleForfeit(io, matchId, user.id, 'manual');
         return;
       }
-      if (match.phase !== 'results') return; // Can only leave from results
 
+      // If they leave POST-MATCH, just track it for cleanup
       match.playersLeaving.add(user.id);
-
       const allLeaving = Object.keys(match.players).every(id => match.playersLeaving.has(parseInt(id)));
-
       if (allLeaving) {
-        // Both want to leave — redirect both and cleanup
-        Object.values(match.players).forEach(player => {
-          if (player.socketId) {
-            io.to(player.socketId).emit('match:go_dashboard');
-          }
-        });
         matchManager.cleanupMatch(matchId);
       } else {
-        // Notify this player they're waiting
-        socket.emit('match:waiting_for_opponent');
-        // Notify opponent that this player wants to leave
+        // Notify opponent
         const opponentId = matchManager.getOpponentId(match, user.id);
         const opponent = match.players[opponentId];
         if (opponent?.socketId) {
           io.to(opponent.socketId).emit('match:opponent_wants_leave');
         }
       }
+    });
+
+    socket.on('match:cheat_warning', ({ matchId }) => {
+      const match = matchManager.getMatch(matchId);
+      if (!match || match.phase === 'results') return;
+      
+      const player = match.players[user.id];
+      if (!player) return;
+      
+      player.warningCount = (player.warningCount || 0) + 1;
+      console.log(`[Socket] ${user.username} received warning ${player.warningCount}/3 in match ${matchId}`);
+      
+      // Notify the player of their current strike count
+      socket.emit('match:cheat_warning', { warningCount: player.warningCount });
+
+      if (player.warningCount >= 3) {
+        handleForfeit(io, matchId, user.id, 'cheat');
+      }
+    });
+
+    socket.on('match:forfeit', ({ matchId }) => {
+      handleForfeit(io, matchId, user.id, 'manual');
     });
 
     // ====== DISCONNECT ======
@@ -458,29 +493,24 @@ function setupSocket(io) {
         const opponent = match.players[opponentId];
         const disconnectedMatchId = match.id;
 
-        // Give 30 seconds to reconnect, then forfeit
-        setTimeout(() => {
-          const currentOnline = onlineUsers.get(user.id);
-          if (!currentOnline) {
-            // Verify match still exists and hasn't already finished
-            const currentMatch = matchManager.getMatch(disconnectedMatchId);
-            if (currentMatch && currentMatch.phase !== 'results') {
-              const forfeitResult = matchManager.forfeitMatch(disconnectedMatchId, user.id);
-              if (forfeitResult) {
-                // Use fresh opponent socketId (may have changed if they reconnected)
-                const currentOpponent = currentMatch.players[opponentId];
-                if (currentOpponent?.socketId) {
-                  io.to(currentOpponent.socketId).emit('match:opponent_disconnected', forfeitResult);
-                }
-              }
-              matchManager.cleanupMatch(disconnectedMatchId);
-            }
-          }
-        }, 30000);
-
+        // Do not forfeit automatically anymore.
+        // Just notify the opponent that they are waiting for a reconnect.
         if (opponent?.socketId) {
           io.to(opponent.socketId).emit('match:opponent_reconnecting');
         }
+
+        // Safeguard: Cleanup match from memory if it remains abandoned for 10 minutes
+        setTimeout(() => {
+          const currentMatch = matchManager.getMatch(disconnectedMatchId);
+          if (currentMatch && currentMatch.phase !== 'results') {
+            const playerStillOffline = !onlineUsers.has(user.id);
+            if (playerStillOffline) {
+              console.log(`[Socket] Cleaning up abandoned match ${disconnectedMatchId} after 10 mins.`);
+              matchManager.cleanupMatch(disconnectedMatchId);
+            }
+          }
+        }, 600000); // 10 minutes
+
       } else if (match && match.phase === 'results') {
         // Player disconnected from results — treat as leaving
         match.playersLeaving.add(user.id);
@@ -667,6 +697,24 @@ function advanceToNextQuestion(io, matchId) {
       startQuestionTimer(io, matchId);
     }
   }, 1500);
+}
+
+function handleForfeit(io, matchId, userId, reason) {
+  const finalResults = matchManager.forfeitMatch(matchId, userId, reason);
+  if (!finalResults) return;
+
+  const match = matchManager.getMatch(matchId);
+  if (!match) return;
+
+  // Notify all players of the forfeit
+  Object.values(match.players).forEach(player => {
+    if (player.socketId) {
+      io.to(player.socketId).emit('match:finished', finalResults);
+    }
+  });
+
+  // Small delay before cleanup to allow logic to settle
+  setTimeout(() => matchManager.cleanupMatch(matchId), 60000);
 }
 
 module.exports = { setupSocket, onlineUsers };

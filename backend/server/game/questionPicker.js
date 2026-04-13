@@ -7,6 +7,42 @@
 const db = require('../db');
 
 /**
+ * Validates a single question object from Gemini
+ */
+function isValidQuestion(q) {
+  if (!q) return false;
+  
+  // Basic existence and type checks
+  const hasText = q.questionText && typeof q.questionText === 'string' && q.questionText.trim().length > 5;
+  const hasA = q.optionA != null && q.optionA.toString().trim().length > 0;
+  const hasB = q.optionB != null && q.optionB.toString().trim().length > 0;
+  const hasC = q.optionC != null && q.optionC.toString().trim().length > 0;
+  const hasD = q.optionD != null && q.optionD.toString().trim().length > 0;
+  
+  if (!(hasText && hasA && hasB && hasC && hasD)) return false;
+
+  // Ensure options are not just the letters "A", "B", "C", "D" if they match exactly
+  const opts = [
+    q.optionA.toString().trim(),
+    q.optionB.toString().trim(),
+    q.optionC.toString().trim(),
+    q.optionD.toString().trim()
+  ];
+  
+  // Reject if any option is empty or just a single character that isn't descriptive enough
+  // (unless it's a very specific short answer common in coding, like '0', '1', etc.)
+  if (opts.some(o => o.length === 0)) return false;
+
+  // Check for duplicate options (which models sometimes do when they fail)
+  const uniqueOpts = new Set(opts);
+  if (uniqueOpts.size < 4) return false;
+
+  const hasCorrect = ['A', 'B', 'C', 'D'].includes(q.correctAnswer);
+  
+  return hasCorrect;
+}
+
+/**
  * Fetch questions dynamically from Gemini REST API
  */
 async function generateQuestionsFromGemini(category, count) {
@@ -58,14 +94,38 @@ The correctAnswer field must be EXACTLY one of: "A", "B", "C", or "D".`;
   const jsonStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
   const parsed = JSON.parse(jsonStr);
 
-  if (!Array.isArray(parsed) || parsed.length < count) {
-    throw new Error(`Gemini returned only ${parsed.length} questions, expected ${count}`);
+  if (!Array.isArray(parsed)) {
+    throw new Error('Gemini did not return an array of questions');
   }
 
-  console.log(`[Gemini] Successfully generated ${parsed.length} ${category} questions!`);
+  // Filter valid questions
+  const validQuestions = parsed.filter(isValidQuestion);
+  const validCount = validQuestions.length;
+
+  if (validCount < count) {
+    console.warn(`[Gemini] Only ${validCount}/${count} questions were valid. Filling gap with local DB questions.`);
+    const missing = count - validCount;
+    // We'll fill the gap later in pickQuestions or right here?
+    // Let's fill it here for consistency.
+    const localFallback = pickLocalQuestions(category, missing);
+    
+    // Convert local fallback to Gemini-like structure (though it's already close)
+    const filler = localFallback.map((q, i) => ({
+      questionText: q.question_text,
+      optionA: q.option_a,
+      optionB: q.option_b,
+      optionC: q.option_c,
+      optionD: q.option_d,
+      correctAnswer: q.correct_answer
+    }));
+    
+    validQuestions.push(...filler);
+  }
+
+  console.log(`[Gemini] Successfully finalized ${validQuestions.length} ${category} questions!`);
 
   // Map to internal schema and return — stored in-memory only, no DB insert needed
-  return parsed.slice(0, count).map((q, i) => ({
+  return validQuestions.slice(0, count).map((q, i) => ({
     id: `gemini_${Date.now()}_${i}`,
     question_text: q.questionText,
     option_a: q.optionA,

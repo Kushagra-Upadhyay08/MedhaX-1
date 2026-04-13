@@ -61,11 +61,13 @@
     showPhase('quiz');
     renderOpponentBoard();
     renderMyBoardSmall();
-  } else {
-    showPhase('placement');
-    renderPlacementBoard();
     renderShapePalette();
   }
+
+  socket.on('challenge:error', (data) => {
+    alert(data.error || 'A problem occurred with the match.');
+    window.location.href = '/dashboard.html';
+  });
 
   // === SHAPE PLACEMENT ===
   function renderShapePalette() {
@@ -203,7 +205,78 @@
     currentRotation = 0;
     renderPlacementBoard();
     renderShapePalette();
+    updatePlacementStatus();
   });
+
+
+
+  // Auto Place
+  function autoPlaceAllShapes() {
+    // Clear first
+    myBoard = initBoard(gridSize);
+    placedShapes = {};
+    selectedShapeIndex = -1;
+    currentRotation = 0;
+
+    const allShapes = [...shapes];
+    const placedList = [];
+
+    // Brute force attempt to place all
+    let attempts = 0;
+    const maxGlobalAttempts = 100;
+
+    while (placedList.length < allShapes.length && attempts < maxGlobalAttempts) {
+      attempts++;
+      myBoard = initBoard(gridSize);
+      placedShapes = {};
+      placedList.length = 0;
+      let success = true;
+
+      for (let i = 0; i < allShapes.length; i++) {
+        const shape = allShapes[i];
+        let shapePlaced = false;
+        let shapeAttempts = 0;
+        const maxShapeAttempts = 500;
+
+        while (!shapePlaced && shapeAttempts < maxShapeAttempts) {
+          shapeAttempts++;
+          const r = Math.floor(Math.random() * gridSize);
+          const c = Math.floor(Math.random() * gridSize);
+          const rot = Math.floor(Math.random() * (shape.rotations?.length || 1));
+          const cells = getShapeCells(i, r, c, rot);
+
+          if (isValidPlacement(cells)) {
+            cells.forEach(([row, col]) => { myBoard[row][col] = 1; });
+            placedShapes[shape.id] = {
+              shapeId: shape.id,
+              cells: cells,
+              rotationIndex: rot,
+            };
+            placedList.push(shape.id);
+            shapePlaced = true;
+          }
+        }
+
+        if (!shapePlaced) {
+          success = false;
+          break;
+        }
+      }
+
+      if (success) break;
+    }
+
+    renderPlacementBoard();
+    renderShapePalette();
+    updatePlacementStatus();
+    
+    if (placedList.length < allShapes.length) {
+      console.warn("Could not auto-place all shapes. Try again.");
+    }
+  }
+
+  document.getElementById('auto-place-btn').addEventListener('click', autoPlaceAllShapes);
+
 
   function updatePlacementStatus() {
     const allPlaced = shapes.every(s => placedShapes[s.id]);
@@ -502,7 +575,13 @@
       titleEl.textContent = '🏆 You Win!';
       titleEl.className = 'win';
       // Show why they won
-      if (data.winCondition === 'reveal') {
+      if (data.forfeited) {
+        if (data.reason === 'cheat') {
+          subEl.textContent = '⚖️ Your opponent was disqualified for cheating!';
+        } else {
+          subEl.textContent = '🚪 Your opponent left the match. Victory by forfeit!';
+        }
+      } else if (data.winCondition === 'reveal') {
         subEl.textContent = '🎯 You revealed all of your opponent\'s shapes!';
       } else {
         subEl.textContent = '✅ You answered more questions correctly!';
@@ -511,7 +590,13 @@
       titleEl.textContent = 'You Lost';
       titleEl.className = 'loss';
       // Show why they lost
-      if (data.winCondition === 'reveal') {
+      if (data.forfeited) {
+        if (data.reason === 'cheat') {
+          subEl.textContent = '💀 You were disqualified for anti-cheat violations.';
+        } else {
+          subEl.textContent = '🚪 You left the match and forfeited.';
+        }
+      } else if (data.winCondition === 'reveal') {
         subEl.textContent = '💀 Your opponent revealed all your shapes!';
       } else {
         subEl.textContent = '📊 Your opponent had more points at the end.';
@@ -544,16 +629,12 @@
   socket.on('match:opponent_reconnecting', () => {
     const feedbackEl = document.getElementById('question-feedback');
     feedbackEl.classList.remove('hidden');
-    feedbackEl.innerHTML = '<span style="color:var(--accent-amber)">⚠️ Opponent disconnected, waiting for reconnect...</span>';
-  });
-
-  socket.on('match:opponent_disconnected', (data) => {
-    showPhase('results');
-    document.getElementById('result-title').textContent = '🏆 You Win!';
-    document.getElementById('result-title').className = 'win';
-    document.getElementById('result-subtitle').textContent = 'Your opponent left the match. Victory by forfeit!';
-    document.getElementById('results-scores').innerHTML = '';
-    sessionStorage.removeItem('matchData');
+    feedbackEl.innerHTML = `
+      <div style="padding:1rem;background:rgba(255,170,0,0.1);border-radius:var(--radius-sm);border:1px solid var(--accent-amber)">
+        <span style="color:var(--accent-amber)">⚠️ Opponent disconnected.</span><br>
+        <span style="font-size:0.8rem;color:var(--text-secondary)">Waiting for them to reconnect... The match will persist.</span>
+      </div>
+    `;
   });
 
   // ====== LEAVE MATCH ======
@@ -575,6 +656,89 @@
   socket.on('match:go_dashboard', () => {
     window.location.href = '/dashboard.html';
   });
+
+  // ====== ANTI-CHEAT ======
+  let antiCheatCooldown = false;
+
+  function triggerCheatWarning() {
+    // Only warn if match is active and not finished
+    const phaseLabel = document.getElementById('phase-label').textContent;
+    if (phaseLabel === 'Match Over' || phaseLabel === 'Waiting...' || antiCheatCooldown) return;
+    
+    // Set a short cooldown to prevent double warnings from blur + visibilitychange
+    antiCheatCooldown = true;
+    setTimeout(() => { antiCheatCooldown = false; }, 2000);
+
+    socket.emit('match:cheat_warning', { matchId });
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') triggerCheatWarning();
+  });
+
+  window.addEventListener('blur', () => {
+    triggerCheatWarning();
+  });
+
+  document.addEventListener('copy', (e) => {
+    triggerCheatWarning();
+  });
+
+  socket.on('match:cheat_warning', (data) => {
+    const overlay = document.getElementById('cheat-warning-overlay');
+    const countEl = document.getElementById('cheat-warning-count');
+    
+    overlay.classList.remove('hidden');
+    countEl.textContent = data.warningCount;
+    
+    if (data.warningCount >= 3) {
+      document.getElementById('cheat-warning-title').textContent = "MATCH FORFEITED";
+      document.getElementById('cheat-warning-msg').textContent = "You have been disqualified for repeated anti-cheat violations.";
+      document.getElementById('close-cheat-overlay').textContent = "Return Home";
+      document.getElementById('close-cheat-overlay').onclick = () => {
+        handleMatchLeave(true); // Force leave
+      };
+    }
+  });
+
+  document.getElementById('close-cheat-overlay').addEventListener('click', () => {
+    document.getElementById('cheat-warning-overlay').classList.add('hidden');
+  });
+
+  // ====== MATCH LEAVE LOGIC ======
+  function handleMatchLeave(isForfeit = false) {
+    const phaseLabel = document.getElementById('phase-label').textContent;
+    
+    if (phaseLabel === 'Match Over' || isForfeit) {
+      // Clean exit
+      socket.emit('match:leave', { matchId });
+      // Redirection should be handled by 'match:go_dashboard' from server, 
+      // but we can also redirect immediately if we want "Zero-Wait"
+      window.location.href = '/dashboard.html';
+      return;
+    }
+
+    if (confirm("Are you sure you want to leave? This will count as a FORFEIT and you will lose the match.")) {
+      socket.emit('match:forfeit', { matchId });
+      // The server will trigger match:finished, which updates the UI.
+      // We'll then redirect shortly after or let the user click "Back to Dashboard"
+      // Or we can just redirect immediately after emit.
+      window.location.href = '/dashboard.html';
+    }
+  }
+
+  document.getElementById('header-leave-btn').addEventListener('click', () => handleMatchLeave());
+  
+  const sideLeaveBtn = document.getElementById('side-leave-btn');
+  if (sideLeaveBtn) {
+    sideLeaveBtn.addEventListener('click', () => handleMatchLeave());
+  }
+
+  // Dashboard button on results page
+  const mainLeaveBtn = document.getElementById('leave-match-btn');
+  if (mainLeaveBtn) {
+    mainLeaveBtn.addEventListener('click', () => handleMatchLeave());
+  }
 
   // Handle reconnect data
   if (matchData.reconnect) {
