@@ -6,6 +6,17 @@ const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Cookie options — secure cookies for production (Render HTTPS)
+function getCookieOptions() {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: isProd ? 'none' : 'lax',
+    secure: isProd,
+  };
+}
+
 // Register
 router.post('/register', (req, res) => {
   try {
@@ -32,7 +43,7 @@ router.post('/register', (req, res) => {
     const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username.toLowerCase(), hash);
 
     const token = jwt.sign({ userId: result.lastInsertRowid }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'lax' });
+    res.cookie('token', token, getCookieOptions());
     res.json({ user: { id: result.lastInsertRowid, username: username.toLowerCase() } });
   } catch (err) {
     console.error('Register error:', err);
@@ -58,7 +69,7 @@ router.post('/login', (req, res) => {
     }
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'lax' });
+    res.cookie('token', token, getCookieOptions());
     res.json({ user: { id: user.id, username: user.username } });
   } catch (err) {
     console.error('Login error:', err);

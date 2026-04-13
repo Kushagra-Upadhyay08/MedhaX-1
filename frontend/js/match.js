@@ -4,17 +4,33 @@
  * Updated with Premium Anti-Cheat and Zero-Wait Leave logic
  */
 function() {
+  // Safety net: if the page is still stuck after 10 seconds, redirect to dashboard
+  const stuckTimer = setTimeout(() => {
+    const waitingEl = document.getElementById('phase-waiting');
+    if (waitingEl && !waitingEl.classList.contains('hidden')) {
+      console.error('[Match] Page stuck for 10s, redirecting to dashboard');
+      const statusEl = document.querySelector('#phase-waiting p');
+      if (statusEl) statusEl.textContent = 'Connection failed. Redirecting...';
+      setTimeout(() => { window.location.href = '/dashboard.html'; }, 1500);
+    }
+  }, 10000);
+
   // Auth check
   let currentUser = null;
   const statusEl = document.querySelector('#phase-waiting p');
   
   try {
     if (statusEl) statusEl.textContent = 'Verifying authentication...';
-    const res = await fetch('/api/auth/me');
-    if (!res.ok) { window.location.href = '/login.html'; return; }
+    const res = await fetch('/api/auth/me', { credentials: 'include' });
+    if (!res.ok) { 
+      clearTimeout(stuckTimer);
+      window.location.href = '/login.html'; 
+      return; 
+    }
     currentUser = (await res.json()).user;
   } catch (err) {
     console.error('Auth check failed:', err);
+    clearTimeout(stuckTimer);
     window.location.href = '/login.html';
     return;
   }
@@ -23,19 +39,12 @@ function() {
   const matchDataStr = sessionStorage.getItem('matchData');
   if (!matchDataStr) { 
     console.warn('No match data found, redirecting to dashboard');
+    clearTimeout(stuckTimer);
     window.location.href = '/dashboard.html'; 
     return; 
   }
   const matchData = JSON.parse(matchDataStr);
 
-  if (statusEl) statusEl.textContent = 'Connecting to game server...';
-  const socket = io({
-    transports: ['websocket', 'polling'],
-    upgrade: true,
-    rememberUpgrade: true,
-    reconnection: true,
-    reconnectionAttempts: 5
-  });
   let matchId = matchData.matchId;
   let gridSize = matchData.gridSize;
   let shapes = matchData.shapes || [];
@@ -90,18 +99,41 @@ function() {
     }
   }
 
-  // Start in placement phase
+  // IMMEDIATELY show the correct phase — BEFORE socket creation
+  // This ensures the user never gets stuck on "Entering Match Room..."
   if (matchData.reconnect && matchData.phase !== 'placing') {
-    // Handle reconnection to active quiz
     showPhase('quiz');
     renderOpponentBoard();
     renderMyBoardSmall();
     renderShapePalette();
   } else {
-    // Fresh match or placing phase reconnect
     showPhase('placement');
     renderShapePalette();
     renderPlacementBoard();
+  }
+
+  // Cancel the stuck timer — we successfully transitioned
+  clearTimeout(stuckTimer);
+
+  // Now create socket connection (if this fails, at least the UI is already showing)
+  let socket;
+  try {
+    if (statusEl) statusEl.textContent = 'Connecting to game server...';
+    socket = io({
+      transports: ['websocket', 'polling'],
+      upgrade: true,
+      rememberUpgrade: true,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      withCredentials: true
+    });
+  } catch (err) {
+    console.error('[Match] Socket.io failed to initialize:', err);
+    // UI is already showing, game can't work without socket but at least page isn't stuck
+    alert('Failed to connect to game server. Please go back to dashboard and try again.');
+    window.location.href = '/dashboard.html';
+    return;
   }
 
   socket.on('challenge:error', (data) => {

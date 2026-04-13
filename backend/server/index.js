@@ -16,7 +16,13 @@ const { setupSocket } = require('../socket');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { 
-  cors: { origin: '*' }, 
+  cors: { 
+    origin: function(origin, callback) {
+      // Allow same-origin requests (origin is undefined) and any origin for flexibility
+      callback(null, true);
+    },
+    credentials: true
+  }, 
   transports: ['websocket', 'polling'],
   allowEIO3: true,
   pingTimeout: 60000, 

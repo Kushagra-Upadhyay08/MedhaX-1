@@ -3,7 +3,7 @@
   // Check auth
   let currentUser = null;
   try {
-    const res = await fetch('/api/auth/me');
+    const res = await fetch('/api/auth/me', { credentials: 'include' });
     if (!res.ok) { window.location.href = '/login.html'; return; }
     const data = await res.json();
     currentUser = data.user;
@@ -24,7 +24,8 @@
   const socket = io({
     transports: ['websocket', 'polling'],
     upgrade: true,
-    rememberUpgrade: true
+    rememberUpgrade: true,
+    withCredentials: true
   });
   let pendingChallengeId = null;
   let challengeTargetUsername = null;
