@@ -77,9 +77,8 @@
   }
   loadHistory();
 
-  // Request online users
+  // Request online users on load
   socket.emit('users:online');
-  setInterval(() => socket.emit('users:online'), 10000);
 
   socket.on('users:online_list', ({ users, count }) => {
     const el = document.getElementById('online-users');

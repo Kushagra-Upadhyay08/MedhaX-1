@@ -15,6 +15,13 @@ const onlineUsers = new Map();
 // Track socketId -> userId
 const socketUserMap = new Map();
 
+function broadcastOnlineUsers(io) {
+  io.emit('users:online_list', {
+    users: [...onlineUsers.values()].map(u => u.username),
+    count: onlineUsers.size,
+  });
+}
+
 function setupSocket(io) {
   io.use(socketAuth);
 
@@ -25,6 +32,9 @@ function setupSocket(io) {
     // Register online
     onlineUsers.set(user.id, { socketId: socket.id, username: user.username });
     socketUserMap.set(socket.id, user.id);
+
+    // Broadcast update to everyone
+    broadcastOnlineUsers(io);
 
     // Rejoin match if reconnecting
     const existingMatch = matchManager.getMatchByUser(user.id);
@@ -496,6 +506,9 @@ function setupSocket(io) {
         onlineUsers.delete(user.id);
       }
       socketUserMap.delete(socket.id);
+      
+      // Broadcast update to everyone
+      broadcastOnlineUsers(io);
 
       // Handle match disconnect
       const match = matchManager.getMatchByUser(user.id);
