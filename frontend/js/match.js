@@ -1,9 +1,9 @@
-// Match page controller - handles all game phases
-(async /**
+/**
  * Match Controller
  * Updated with Premium Anti-Cheat and Zero-Wait Leave logic
  */
-function() {
+// Match page controller - handles all game phases
+(async function() {
   // Safety net: if the page is still stuck after 10 seconds, redirect to dashboard
   const stuckTimer = setTimeout(() => {
     const waitingEl = document.getElementById('phase-waiting');
